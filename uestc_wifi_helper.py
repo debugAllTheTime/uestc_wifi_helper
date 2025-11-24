@@ -25,6 +25,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
+
 if sys.version_info >= (3, 11):  # Python 3.11+
     import tomllib  # type: ignore
 else:  # pragma: no cover - fallback for older Pythons
@@ -66,7 +67,12 @@ class SimpleSession:
             body = resp.read().decode(charset, errors="replace")
             return SimpleResponse(resp.getcode(), body)
 
-    def get(self, url: str, params: Dict[str, str | int] | None = None, timeout: float = 5) -> SimpleResponse:
+    def get(
+        self,
+        url: str,
+        params: Dict[str, str | int] | None = None,
+        timeout: float = 5,
+    ) -> SimpleResponse:
         query = f"?{urlencode(params)}" if params else ""
         return self._request(url + query, timeout)
 
