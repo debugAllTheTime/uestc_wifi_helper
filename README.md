@@ -16,10 +16,13 @@ linux下的托盘程序依赖qt6pas
 
 仓库中提供了一个纯命令行的 Python 实现 `uestc_wifi_helper.py`，不依赖任何图形界面组件。
 
+在 Python 3.11+ 上无需额外的软件。如果要使用模版配置，建议安装 `tomli` 以支持 TOML 配置。
+
 安装依赖：
 
-```
+```bash
 pip install -r requirements.txt
+
 ```
 
 运行方式：

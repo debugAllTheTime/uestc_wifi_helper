@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import Dict, Iterable, Tuple
 from urllib.parse import quote
 
-import requests
+import json
+from http.cookiejar import Cookie, CookieJar
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import HTTPCookieProcessor, Request, build_opener
+
 
 if sys.version_info >= (3, 11):  # Python 3.11+
     import tomllib  # type: ignore
@@ -36,6 +41,40 @@ NETWORK_OPERATORS: Dict[int, Tuple[int, str, str]] = {
     2: (1, "10.253.0.237", "dx-uestc"),
     3: (1, "10.253.0.237", "dx"),
 }
+
+
+class SimpleResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+
+class SimpleSession:
+    """A tiny HTTP client to avoid external dependencies."""
+
+    def __init__(self):
+        self.headers: dict[str, str] = {}
+        self.cookies = CookieJar()
+        self._opener = build_opener(HTTPCookieProcessor(self.cookies))
+
+    def _build_request(self, url: str) -> Request:
+        return Request(url, headers=self.headers)
+
+    def _request(self, url: str, timeout: float) -> SimpleResponse:
+        req = self._build_request(url)
+        with self._opener.open(req, timeout=timeout) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            body = resp.read().decode(charset, errors="replace")
+            return SimpleResponse(resp.getcode(), body)
+
+    def get(
+        self,
+        url: str,
+        params: Dict[str, str | int] | None = None,
+        timeout: float = 5,
+    ) -> SimpleResponse:
+        query = f"?{urlencode(params)}" if params else ""
+        return self._request(url + query, timeout)
 
 
 class NotConnectedException(RuntimeError):
@@ -143,7 +182,7 @@ class UESTCWiFi:
         self._ac_id = ac_id
         self._target_ip = target_ip
         self._network_operator = operator_code
-        self._session = requests.Session()
+        self._session = SimpleSession()
         self._session.headers.update(
             {
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -155,7 +194,7 @@ class UESTCWiFi:
                 "Host": target_ip,
             }
         )
-        self._session.cookies.set("lang", "zh-CN")
+        self._session.headers["Cookie"] = "lang=zh-CN"
 
     @staticmethod
     def _parse_response(res: str) -> dict:
@@ -163,16 +202,13 @@ class UESTCWiFi:
         if not res.startswith(prefix) or not res.endswith(")"):
             raise RuntimeError("Unknown response format")
         json_str = res[len(prefix) : -1]
-        return requests.utils.json.loads(json_str)
+        return json.loads(json_str)
 
     def _check_connect(self) -> bool:
         try:
             resp = self._session.get(f"http://{self._target_ip}", timeout=5)
             return resp.status_code < 400
-        except requests.RequestException as exc:  # pragma: no cover - network error
-            response = getattr(exc, "response", None)
-            if response is not None:
-                return 0 < response.status_code < 400
+        except URLError:
             return False
 
     def _check_online(self) -> Tuple[bool, str]:
@@ -224,7 +260,7 @@ class UESTCWiFi:
             "acid": self._ac_id,
             "enc_ver": "srun_bx1",
         }
-        json_str = requests.utils.json.dumps(payload, separators=(",", ":"))
+        json_str = json.dumps(payload, separators=(",", ":"))
         encoded_str = xencode(json_str, token)
         info = "{SRBX1}" + encoded_str
         password_md5 = hmac.new(
